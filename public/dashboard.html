@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saino Forge | Enterprise Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Vazirmatn:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    
+    <style>
+        body { font-family: 'Vazirmatn', sans-serif; background: #0b0f19; color: #e2e8f0; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .input-field { 
+            background: #1e293b; border: 1px solid #334155; 
+            padding: 8px 12px; border-radius: 6px; outline: none; 
+            transition: all 0.2s; width: 100%;
+        }
+        .input-field:focus { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2); }
+        .btn { transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .btn:active { transform: scale(0.98); }
+        
+        .tree-item { transition: background 0.15s; cursor: pointer; user-select: none; }
+        .tree-item:hover { background: rgba(255,255,255,0.05); }
+        
+        /* Sidebar transition */
+        .sidebar { transition: width 0.3s ease-in-out; }
+        .sidebar-collapsed { width: 4rem !important; }
+        .sidebar-collapsed .sidebar-text { display: none; }
+        .sidebar-collapsed .sidebar-icon { margin: 0 auto; }
+        
+        .fade-enter { opacity: 0; transform: translateY(10px); }
+        .fade-enter-active { opacity: 1; transform: translateY(0); transition: all 0.3s; }
+    </style>
+</head>
+<body x-data="forgeApp()" class="h-screen overflow-hidden flex flex-col">
+
+    <!-- Toast Notifications -->
+    <div class="fixed top-5 left-5 z-[60] flex flex-col gap-2">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div :class="toast.type === 'error' ? 'bg-red-900 border-red-700' : 'bg-emerald-900 border-emerald-700'" 
+                 class="text-white px-4 py-3 rounded-lg shadow-lg border flex items-center gap-3 min-w-[300px] animate-bounce-in">
+                <i :class="toast.type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-check'" class="fa-solid"></i>
+                <span x-text="toast.message" class="text-sm font-bold"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- Header -->
+    <header class="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 z-10">
+        <div class="flex items-center gap-3">
+            <button @click="sidebarOpen = !sidebarOpen" class="text-slate-400 hover:text-white transition-colors">
+                <i class="fa-solid fa-bars text-xl"></i>
+            </button>
+            <h1 class="text-lg font-black tracking-tighter text-white flex items-center gap-2">
+                SAINO<span class="text-amber-500">FORGE</span> 
+                <span class="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">v5.5</span>
+            </h1>
+        </div>
+        <div class="flex bg-slate-800 p-1 rounded-lg">
+            <button @click="tab='build'" :class="tab==='build'?'bg-amber-500 text-slate-900 shadow':'text-slate-400 hover:text-white'" class="px-4 py-1.5 rounded-md font-bold text-xs transition-all"><i class="fa-solid fa-hammer ml-2"></i>کامپایلر</button>
+            <button @click="tab='batch'" :class="tab==='batch'?'bg-amber-500 text-slate-900 shadow':'text-slate-400 hover:text-white'" class="px-4 py-1.5 rounded-md font-bold text-xs transition-all"><i class="fa-solid fa-layer-group ml-2"></i>بیلد گروهی</button>
+            <button @click="tab='editor'" :class="tab==='editor'?'bg-amber-500 text-slate-900 shadow':'text-slate-400 hover:text-white'" class="px-4 py-1.5 rounded-md font-bold text-xs transition-all"><i class="fa-solid fa-code ml-2"></i>دیتابیس JSON</button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar: File Manager -->
+        <aside class="sidebar bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 w-72" :class="!sidebarOpen ? 'sidebar-collapsed' : ''">
+            <div class="p-4 border-b border-slate-800 flex justify-between items-center h-14" x-show="sidebarOpen">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">فایل منیجر</span>
+                <div class="flex gap-1">
+                    <button @click="refreshMeta()" class="text-slate-400 hover:text-white p-1" title="بروزرسانی"><i class="fa-solid fa-rotate-right"></i></button>
+                    <button @click="openCreateModal()" class="text-amber-500 hover:text-amber-400 p-1" title="فایل/پوشه جدید"><i class="fa-solid fa-folder-plus"></i></button>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-2 space-y-4" x-show="sidebarOpen">
+                <!-- Templates Tree -->
+                <div>
+                    <div class="px-2 py-1 text-xs font-bold text-indigo-400 mb-1 flex items-center gap-2 sticky top-0 bg-slate-900 z-10"><i class="fa-solid fa-cubes"></i> قالب‌ها (Templates)</div>
+                    <div class="space-y-0.5" x-html="renderTree(meta.templates, 'template')"></div>
+                </div>
+
+                <!-- Data Tree -->
+                <div>
+                    <div class="px-2 py-1 text-xs font-bold text-emerald-400 mb-1 flex items-center gap-2 sticky top-0 bg-slate-900 z-10"><i class="fa-solid fa-database"></i> داده‌ها (JSON)</div>
+                    <div class="space-y-0.5" x-html="renderTree(meta.dataFiles, 'data')"></div>
+                </div>
+            </div>
+
+            <!-- Collapsed State Icons -->
+            <div class="flex-1 flex flex-col items-center pt-4 gap-4" x-show="!sidebarOpen">
+                <button @click="sidebarOpen=true" class="text-indigo-400 hover:text-white" title="باز کردن"><i class="fa-solid fa-cubes text-xl"></i></button>
+                <button @click="sidebarOpen=true" class="text-emerald-400 hover:text-white" title="باز کردن"><i class="fa-solid fa-database text-xl"></i></button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 bg-[#0b0f19] relative overflow-hidden flex flex-col">
+            
+            <!-- BUILD SINGLE TAB -->
+            <div x-show="tab==='build'" class="flex-1 p-8 overflow-y-auto">
+                <div class="max-w-4xl mx-auto">
+                    <div class="text-center mb-10">
+                        <h2 class="text-3xl font-black text-white mb-2">کامپایلر استاتیک</h2>
+                        <p class="text-slate-400">بیلد یک صفحه تکی با ترکیب قالب و داده</p>
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl -z-10"></div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-400">قالب (انتخاب از سایدبار)</label>
+                                <div class="relative">
+                                    <input type="text" x-model="build.template" readonly class="input-field bg-slate-950 cursor-pointer" placeholder="Template..." @click="if(!sidebarOpen) sidebarOpen=true">
+                                    <i class="fa-brands fa-react absolute left-3 top-3 text-slate-600"></i>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-400">خروجی (مسیر URL)</label>
+                                <div class="relative">
+                                    <input type="text" x-model="build.output" class="input-field font-mono text-left" dir="ltr" placeholder="/blog/hello-world">
+                                    <i class="fa-solid fa-globe absolute left-3 top-3 text-slate-600"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3 mb-6">
+                            <div class="flex justify-between items-center">
+                                <label class="text-xs font-bold text-slate-400">منابع داده (JSON)</label>
+                                <button @click="build.sources.push({filename:''})" class="text-xs text-amber-500 hover:underline">+ افزودن</button>
+                            </div>
+                            <div class="space-y-2 bg-slate-950 p-4 rounded-xl border border-slate-800/50 max-h-40 overflow-y-auto">
+                                <template x-for="(src, idx) in build.sources" :key="idx">
+                                    <div class="flex gap-2 items-center">
+                                        <span class="text-slate-600 font-mono text-xs" x-text="idx+1"></span>
+                                        <input type="text" x-model="src.filename" class="input-field text-xs font-mono" placeholder="روی فایل JSON در سایدبار کلیک کنید">
+                                        <button @click="build.sources.splice(idx,1)" class="text-red-500 hover:text-red-400 px-2"><i class="fa-solid fa-trash"></i></button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 border-t border-slate-800 flex justify-end gap-3">
+                            <button @click="openPreview()" x-show="lastBuiltPath" class="btn bg-slate-800 text-white hover:bg-slate-700 px-6 py-3 rounded-xl font-bold">
+                                <i class="fa-solid fa-eye"></i> مشاهده خروجی
+                            </button>
+                            <button @click="runBuild()" :disabled="loading.build" class="btn bg-amber-500 hover:bg-amber-400 text-slate-900 px-8 py-3 rounded-xl font-black shadow-lg shadow-amber-500/20 disabled:opacity-50">
+                                <i x-show="loading.build" class="fa-solid fa-circle-notch fa-spin"></i>
+                                <span x-show="!loading.build">بیلد و ذخیره <i class="fa-solid fa-bolt mr-2"></i></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BATCH BUILD TAB -->
+            <div x-show="tab==='batch'" class="flex-1 p-8 overflow-y-auto">
+                <div class="max-w-4xl mx-auto">
+                    <div class="text-center mb-10">
+                        <h2 class="text-3xl font-black text-white mb-2">بیلد گروهی</h2>
+                        <p class="text-slate-400">اعمال یک قالب روی تمام فایل‌های JSON یک پوشه</p>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
+                        <div class="grid grid-cols-1 gap-6">
+                             <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-400">قالب مرجع</label>
+                                <input type="text" x-model="batch.template" readonly class="input-field bg-slate-950 text-slate-300" placeholder="قالب را انتخاب کنید...">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-400">پوشه داده‌های ورودی</label>
+                                <input type="text" x-model="batch.folder" class="input-field font-mono text-left" dir="ltr" placeholder="folder/path (روی یک پوشه در سایدبار کلیک کنید)">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-400">پوشه خروجی (Base Path)</label>
+                                <input type="text" x-model="batch.outputBase" class="input-field font-mono text-left" dir="ltr" placeholder="/blog">
+                                <p class="text-[10px] text-slate-500">فایل‌ها با نام اصلی JSON در این مسیر ذخیره می‌شوند.</p>
+                            </div>
+                        </div>
+                        <div class="flex justify-end pt-4">
+                             <button @click="runBatchBuild()" :disabled="loading.batch" class="btn bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50">
+                                <i x-show="loading.batch" class="fa-solid fa-circle-notch fa-spin"></i>
+                                <span x-show="!loading.batch">شروع عملیات گروهی <i class="fa-solid fa-layer-group mr-2"></i></span>
+                            </button>
+                        </div>
+                        
+                        <!-- Batch Logs -->
+                        <div x-show="batchLogs.length > 0" class="mt-6 bg-black rounded-lg p-4 font-mono text-xs h-40 overflow-y-auto border border-slate-800">
+                            <template x-for="log in batchLogs">
+                                <div class="mb-1" :class="log.status==='success'?'text-emerald-400':'text-red-400'">
+                                    <span x-text="log.status==='success'?'[OK]':'[ERR]'"></span>
+                                    <span x-text="log.file"></span> -> <span x-text="log.path || log.error"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EDITOR TAB -->
+            <div x-show="tab==='editor'" class="flex-1 flex flex-col h-full">
+                <!-- Toolbar -->
+                <div class="bg-slate-900 border-b border-slate-800 p-3 flex justify-between items-center shrink-0">
+                    <div class="flex items-center gap-4 w-1/2">
+                        <div class="flex items-center gap-2 text-sm text-slate-400">
+                            <i class="fa-solid fa-file-pen"></i>
+                            <span class="font-mono text-white" x-text="editor.filename || 'فایلی انتخاب نشده'"></span>
+                        </div>
+                        <span x-show="editor.isDirty" class="text-xs bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded animate-pulse">ذخیره نشده</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button x-show="activeSchema" @click="generateFromSchema()" class="btn bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white text-xs px-3 py-2 rounded-lg transition-all">
+                            <i class="fa-solid fa-magic"></i> تولید دیتا
+                        </button>
+                        <button @click="saveData()" :disabled="!editor.filename || loading.save" class="btn bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold disabled:opacity-50 text-xs">
+                            <i x-show="loading.save" class="fa-solid fa-circle-notch fa-spin"></i>
+                            <span>ذخیره تغییرات</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 flex overflow-hidden">
+                    <!-- Form Builder -->
+                    <div class="flex-1 overflow-y-auto p-6 border-l border-slate-800">
+                        <div x-show="!editor.filename" class="h-full flex flex-col items-center justify-center text-slate-600 opacity-50">
+                            <i class="fa-regular fa-folder-open text-6xl mb-4"></i>
+                            <p>یک فایل JSON انتخاب کنید</p>
+                        </div>
+
+                        <div x-show="editor.filename">
+                            <div class="space-y-5">
+                                <template x-if="activeSchema">
+                                    <template x-for="(prop, key) in activeSchema.properties" :key="key">
+                                        <div class="bg-slate-900/50 p-4 rounded-lg border border-slate-800">
+                                            <div class="flex justify-between mb-2">
+                                                <label class="text-sm font-bold text-slate-300 block" x-text="key"></label>
+                                                <span class="text-[10px] bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-mono" x-text="prop.type"></span>
+                                            </div>
+                                            <!-- Inputs (String, Number, Boolean) -->
+                                            <template x-if="prop.type === 'string' || prop.type === 'number' || prop.type === 'integer'">
+                                                <input :type="prop.type === 'string' ? 'text' : 'number'" x-model="editor.data[key]" @input="editor.isDirty = true" class="input-field text-sm">
+                                            </template>
+                                            <template x-if="prop.type === 'boolean'">
+                                                <label class="flex items-center cursor-pointer gap-2"><input type="checkbox" x-model="editor.data[key]" @change="editor.isDirty = true" class="w-5 h-5 rounded bg-slate-800 border-slate-600"><span class="text-sm text-slate-400">فعال</span></label>
+                                            </template>
+                                            <!-- Arrays -->
+                                            <template x-if="prop.type === 'array'">
+                                                <div class="space-y-2">
+                                                    <template x-for="(item, idx) in (editor.data[key] || [])" :key="idx">
+                                                        <div class="flex gap-2">
+                                                            <input type="text" x-model="editor.data[key][idx]" @input="editor.isDirty = true" class="input-field text-sm">
+                                                            <button @click="editor.data[key].splice(idx, 1); editor.isDirty=true" class="text-red-500 hover:bg-red-900/20 px-2 rounded"><i class="fa-solid fa-xmark"></i></button>
+                                                        </div>
+                                                    </template>
+                                                    <button @click="if(!editor.data[key]) editor.data[key]=[]; editor.data[key].push(''); editor.isDirty=true" class="w-full py-1.5 border border-dashed border-slate-700 text-slate-500 hover:text-amber-500 rounded text-xs">+ افزودن</button>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </template>
+                                <template x-if="!activeSchema">
+                                    <div class="text-center py-4 opacity-50"><p class="text-xs">بدون اسکیما (ویرایش مستقیم JSON)</p></div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Raw JSON -->
+                    <div class="w-96 bg-[#0d1117] flex flex-col border-r border-slate-800">
+                        <div class="bg-slate-900 px-3 py-2 text-xs font-mono text-slate-400 border-b border-slate-800">RAW JSON</div>
+                        <textarea x-model="jsonString" @input="editor.isDirty = true" class="flex-1 bg-transparent text-amber-100/80 font-mono text-xs p-4 outline-none resize-none leading-relaxed" spellcheck="false"></textarea>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Modal -->
+    <div x-show="modal.open" class="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center backdrop-blur-sm" x-transition>
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-96 shadow-2xl" @click.away="modal.open = false">
+            <h3 class="text-lg font-bold text-white mb-4">ایجاد آیتم جدید</h3>
+            <div class="space-y-4">
+                <div class="flex bg-slate-800 p-1 rounded-lg">
+                    <button @click="modal.isFolder=false" :class="!modal.isFolder ? 'bg-indigo-600 text-white' : 'text-slate-400'" class="flex-1 text-xs py-2 rounded">فایل</button>
+                    <button @click="modal.isFolder=true" :class="modal.isFolder ? 'bg-indigo-600 text-white' : 'text-slate-400'" class="flex-1 text-xs py-2 rounded">پوشه</button>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">مسیر والد</label>
+                    <select x-model="modal.targetType" class="input-field text-sm"><option value="data">Data</option><option value="templates">Templates</option></select>
+                </div>
+                <input type="text" x-model="modal.name" class="input-field dir-ltr text-left" placeholder="folder/filename...">
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="createItem()" class="bg-amber-500 text-slate-900 px-4 py-2 rounded font-bold text-sm">ایجاد</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div x-show="preview.open" class="fixed inset-0 bg-black/90 z-[80] flex flex-col" x-transition>
+        <div class="bg-slate-900 p-3 flex justify-between items-center border-b border-slate-800">
+            <h3 class="text-white font-bold flex items-center gap-2"><i class="fa-solid fa-eye text-amber-500"></i> پیش‌نمایش زنده</h3>
+            <div class="flex gap-3">
+                 <span class="text-xs text-slate-400 font-mono self-center" x-text="preview.url"></span>
+                 <button @click="preview.open=false" class="text-white hover:text-red-500"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+        </div>
+        <div class="flex-1 bg-white">
+            <iframe :src="preview.url" class="w-full h-full border-none"></iframe>
+        </div>
+    </div>
+
+    <script>
+        function forgeApp() {
+            return {
+                sidebarOpen: true,
+                tab: 'build',
+                meta: { templates: [], dataFiles: [] },
+                expandedFolders: new Set(),
+                activeSchema: null,
+                toasts: [],
+                loading: { build: false, save: false, batch: false },
+                lastBuiltPath: '',
+                
+                build: { template: '', output: '', sources: [{filename:''}] },
+                batch: { template: '', folder: '', outputBase: '' },
+                batchLogs: [],
+                
+                editor: { filename: '', data: {}, isDirty: false },
+                modal: { open: false, targetType: 'data', isFolder: false, name: '' },
+                preview: { open: false, url: '' },
+
+                get jsonString() { return JSON.stringify(this.editor.data, null, 4); },
+                set jsonString(val) { try { this.editor.data = JSON.parse(val); this.editor.isDirty = true; } catch(e){} },
+
+                async init() {
+                    this.setupGlobalHandlers();
+                    await this.refreshMeta();
+                },
+
+                showToast(msg, type='success') {
+                    const id = Date.now(); this.toasts.push({id, message: msg, type});
+                    setTimeout(()=>this.toasts=this.toasts.filter(t=>t.id!==id),3000);
+                },
+
+                async refreshMeta() {
+                    const res = await fetch('/api/meta');
+                    this.meta = await res.json();
+                },
+
+                // --- RECURSIVE TREE RENDERER ---
+                renderTree(items, type, level = 0) {
+                    if (!items || items.length === 0) return '';
+                    let html = '';
+                    const padding = level * 12 + 8;
+                    
+                    items.sort((a,b) => (a.type==='folder' && b.type!=='folder') ? -1 : 1); // Folders first
+
+                    items.forEach(item => {
+                        const isExpanded = this.expandedFolders.has(item.path);
+                        const icon = item.type === 'folder' 
+                            ? (isExpanded ? '<i class="fa-regular fa-folder-open text-yellow-500"></i>' : '<i class="fa-solid fa-folder text-yellow-600"></i>')
+                            : (type === 'template' ? '<i class="fa-brands fa-react text-blue-400"></i>' : '<i class="fa-solid fa-file-code text-green-500"></i>');
+                        
+                        const clickAction = item.type === 'folder' 
+                            ? `window.toggleFolder('${item.path.replace(/\\/g, '/')}')`
+                            : `window.selectFile('${item.path.replace(/\\/g, '/')}', '${item.type}', '${type}')`;
+
+                        html += `
+                            <div class="tree-item flex items-center py-1.5 rounded text-sm text-slate-300" 
+                                 style="padding-right:${padding}px" 
+                                 onclick="${clickAction}">
+                                <span class="w-5 text-center ml-2">${icon}</span>
+                                <span class="truncate dir-ltr flex-1 text-left">${item.name}</span>
+                                ${item.type !== 'folder' ? `<button onclick="event.stopPropagation(); window.deleteFile('${item.path.replace(/\\/g, '/')}', '${type}')" class="text-slate-600 hover:text-red-500 px-2 opacity-0 hover:opacity-100 group-hover:opacity-100 transition-opacity"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+                            </div>
+                        `;
+
+                        if (item.type === 'folder' && isExpanded && item.children) {
+                            html += this.renderTree(item.children, type, level + 1);
+                        }
+                    });
+                    return html;
+                },
+
+                setupGlobalHandlers() {
+                    window.toggleFolder = (path) => {
+                        if (this.expandedFolders.has(path)) this.expandedFolders.delete(path);
+                        else this.expandedFolders.add(path);
+                        
+                        // If in batch mode and a data folder is selected
+                        if (this.tab === 'batch' && path.startsWith('storage/data')) { // crude check
+                             // In a real app we'd map full path back to relative
+                        }
+                        // Force update implicitly by Alpine reactivity system detecting set change if used in x-html? 
+                        // No, x-html is just HTML. We need to trigger re-render.
+                        // The easiest way in Alpine x-html is to depend on a reactive variable.
+                        // Since renderTree is called inside x-html="renderTree(...)", Alpine will re-eval if dependencies change.
+                        // We need to make sure 'expandedFolders' mutation triggers it. 
+                        // Trick: assign to a dummy var or clone the Set if it doesn't trigger.
+                        this.expandedFolders = new Set(this.expandedFolders);
+                    };
+
+                    window.selectFile = (path, fileType, context) => {
+                        if (context === 'template') {
+                            this.build.template = path;
+                            this.batch.template = path;
+                            this.loadSchema(path);
+                        } else {
+                            if (this.tab === 'batch') {
+                                // If selecting a file in batch mode, maybe user meant the folder?
+                                // Let's ignore files for batch folder selection or implement parent dir logic
+                                const parentDir = path.substring(0, path.lastIndexOf('/'));
+                                this.batch.folder = parentDir;
+                            } else {
+                                this.tab = 'editor';
+                                this.loadFile(path);
+                                // Auto-fill build source if empty
+                                if(this.build.sources.length === 1 && !this.build.sources[0].filename) {
+                                    this.build.sources[0].filename = path;
+                                }
+                            }
+                        }
+                    };
+
+                    window.deleteFile = async (path, type) => {
+                        if(!confirm('حذف شود؟')) return;
+                        await fetch('/api/fs/delete', {
+                            method:'POST',
+                            headers:{'Content-Type':'application/json'},
+                            body:JSON.stringify({filePath:path, type: type==='template'?'templates':'data'})
+                        });
+                        this.refreshMeta();
+                    }
+                },
+
+                async loadSchema(path) {
+                    const res = await fetch('/api/meta/schema', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ templatePath: path }) });
+                    const r = await res.json();
+                    this.activeSchema = r.schema;
+                },
+
+                async loadFile(path) {
+                    this.editor.filename = path;
+                    const res = await fetch('/api/fs/read', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ filePath: path, type: 'data' }) });
+                    const r = await res.json();
+                    this.editor.data = r.content;
+                },
+
+                async saveData() {
+                    this.loading.save = true;
+                    try {
+                        await fetch('/api/fs/write', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ type: 'data', filePath: this.editor.filename, content: this.editor.data }) });
+                        this.editor.isDirty = false;
+                        this.showToast('ذخیره شد');
+                    } catch(e) { this.showToast('خطا', 'error'); }
+                    this.loading.save = false;
+                },
+
+                async runBuild() {
+                    this.loading.build = true;
+                    try {
+                        const res = await fetch('/api/build/single', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ templatePath: this.build.template, outputName: this.build.output, dataSources: this.build.sources })
+                        });
+                        const r = await res.json();
+                        if(r.success) {
+                            this.showToast('بیلد موفق: ' + r.path);
+                            this.lastBuiltPath = r.path;
+                        } else throw new Error(r.error);
+                    } catch(e) { this.showToast(e.message, 'error'); }
+                    this.loading.build = false;
+                },
+
+                async runBatchBuild() {
+                    this.loading.batch = true;
+                    this.batchLogs = [];
+                    try {
+                         const res = await fetch('/api/build/batch', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ templatePath: this.batch.template, dataFolder: this.batch.folder, outputBase: this.batch.outputBase })
+                        });
+                        const r = await res.json();
+                        this.batchLogs = r.results || [];
+                        this.showToast('بیلد گروهی تمام شد');
+                    } catch(e) { this.showToast(e.message, 'error'); }
+                    this.loading.batch = false;
+                },
+
+                async createItem() {
+                    await fetch('/api/fs/write', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ type: this.modal.targetType, filePath: this.modal.name, isFolder: this.modal.isFolder, content: this.modal.isFolder?null:{} })
+                    });
+                    this.refreshMeta(); this.modal.open=false;
+                },
+
+                openPreview() {
+                    if(!this.lastBuiltPath) return;
+                    // Ensure path starts with slash
+                    const p = this.lastBuiltPath.startsWith('/') ? this.lastBuiltPath : '/' + this.lastBuiltPath;
+                    this.preview.url = `/preview${p}`;
+                    this.preview.open = true;
+                },
+                
+                generateFromSchema() {
+                    // (Logic same as previous version - omitted for brevity but assumed present)
+                    if(!this.activeSchema) return;
+                    const d = {};
+                    for(const [k,v] of Object.entries(this.activeSchema.properties)) {
+                        if(v.type==='array') d[k] = ['Sample'];
+                        else if(v.type==='boolean') d[k]=false;
+                        else if(v.type==='number') d[k]=0;
+                        else d[k]='Content';
+                    }
+                    this.editor.data = d;
+                }
+            }
+        }
+        
+        // Init fix for window binding
+        const _init = forgeApp().init;
+        forgeApp = function() { return { ...forgeApp(), init: async function() { this.setupGlobalHandlers(); await _init.call(this); } } }
+    </script>
+</body>
+</html>
